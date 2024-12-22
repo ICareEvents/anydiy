@@ -36,9 +36,31 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
-@app.route("/")
-def home():
-    return "Flask backend is running."
+@app.route("/", methods=["GET", "POST", "OPTIONS"])
+def root_endpoint():
+    if request.method == "OPTIONS":
+        # Handle preflight requests
+        response = jsonify({"message": "CORS preflight passed"})
+        response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        return response, 200
+
+    if request.method == "GET":
+        return "Flask backend is running."
+
+    if request.method == "POST":
+        # Mock response for the frontend function `hAdv`
+        elapsed_time = 0.5  # Mock elapsed time
+        results = [
+            {"model": "MockModel1", "coherence": 0.9},
+            {"model": "MockModel2", "coherence": 0.85}
+        ]
+        return jsonify({
+            "elapsed": elapsed_time,
+            "results": results,
+            "message": "Root endpoint POST request successful"
+        }), 200
 
 @app.route("/upload_text", methods=["OPTIONS", "POST"])
 def upload_text():
