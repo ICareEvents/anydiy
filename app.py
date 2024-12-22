@@ -6,7 +6,7 @@ import time
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Allow requests from all origins
+CORS(app, resources={r"/*": {"origins": ["https://crisil-navy.vercel.app"]}})
 
 # If you do real BERT embeddings, you'd install and import them, e.g.:
 # import torch
