@@ -8,6 +8,8 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 # Set up CORS to allow requests from the frontend
+#   - Make sure the origins match exactly where your React app is hosted.
+#   - Optionally, you could do origins=["*"] to allow all, but safer to keep it specific.
 CORS(app, resources={r"/*": {"origins": ["https://crisil-one.vercel.app"]}})
 
 # Global storage for transcripts
@@ -33,7 +35,8 @@ def add_cors_headers(response):
     """Add CORS headers to every response."""
     response.headers["Access-Control-Allow-Origin"] = "https://crisil-one.vercel.app"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    # Allow whatever headers you need here:
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
 
 @app.route("/", methods=["GET", "POST", "OPTIONS"])
@@ -43,7 +46,7 @@ def root_endpoint():
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
         response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response, 200
 
     if request.method == "GET":
@@ -69,7 +72,7 @@ def upload_text():
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response, 200
 
     # Handle POST request
@@ -87,7 +90,7 @@ def preprocess():
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
         response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response, 200
 
     global STORE_TEXT
@@ -142,7 +145,7 @@ def run_advanced_model():
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response, 200
 
     global STORE_TEXT
