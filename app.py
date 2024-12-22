@@ -190,6 +190,6 @@ def run_advanced_model():
     })
 
 if __name__ == "__main__":
-    # Start the Flask server
-    # If you want to run on a different port, do: app.run(port=1234)
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get("PORT", 5000))  # Use Render's PORT variable or default to 5000
+    app.run(host="0.0.0.0", port=port)
