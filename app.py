@@ -8,8 +8,6 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 # Set up CORS to allow requests from the frontend
-#   - Make sure the origins match exactly where your React app is hosted.
-#   - Optionally, you could do origins=["*"] to allow all, but safer to keep it specific.
 CORS(app, resources={r"/*": {"origins": ["https://crisil-one.vercel.app"]}})
 
 # Global storage for transcripts
@@ -34,18 +32,21 @@ def tokenize_and_remove_stopwords(text):
 def add_cors_headers(response):
     """Add CORS headers to every response."""
     response.headers["Access-Control-Allow-Origin"] = "https://crisil-one.vercel.app"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    # Allow whatever headers you need here:
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
 
-@app.route("/", methods=["GET", "POST", "OPTIONS"])
+@app.route("/", methods=["GET", "POST", "OPTIONS", "HEAD"])
 def root_endpoint():
+    if request.method == "HEAD":
+        # Return a simple valid response for HEAD requests
+        return "", 200
+
     if request.method == "OPTIONS":
-        # Handle preflight requests
+        # Handle preflight
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response, 200
 
@@ -68,14 +69,13 @@ def root_endpoint():
 @app.route("/upload_text", methods=["OPTIONS", "POST"])
 def upload_text():
     if request.method == "OPTIONS":
-        # Preflight request
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response, 200
 
-    # Handle POST request
+    # Handle POST
     global STORE_TEXT
     data = request.json
     if not data or "text" not in data:
@@ -86,7 +86,6 @@ def upload_text():
 @app.route("/preprocess", methods=["GET", "OPTIONS"])
 def preprocess():
     if request.method == "OPTIONS":
-        # Preflight request
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
         response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
@@ -141,7 +140,6 @@ def preprocess():
 @app.route("/run_advanced_model", methods=["POST", "OPTIONS"])
 def run_advanced_model():
     if request.method == "OPTIONS":
-        # Preflight request
         response = jsonify({"message": "CORS preflight passed"})
         response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
