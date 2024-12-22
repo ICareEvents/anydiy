@@ -3,3 +3,4 @@ flask-cors
 hdbscan
 umap-learn
 sentence-transformers
+gunicorn
