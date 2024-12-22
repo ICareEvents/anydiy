@@ -37,8 +37,17 @@ def tokenize_and_remove_stopwords(text):
 def home():
     return "Flask backend is running."
 
-@app.route("/upload_text", methods=["POST"])
+@app.route("/upload_text", methods=["OPTIONS", "POST"])
 def upload_text():
+    if request.method == "OPTIONS":
+        # Handle preflight request
+        response = jsonify({"message": "CORS preflight passed"})
+        response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+        return response, 200
+
+    # Handle actual POST request
     global STORE_TEXT
     data = request.json
     if not data or "text" not in data:
