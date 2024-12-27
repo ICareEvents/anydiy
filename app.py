@@ -4,78 +4,35 @@ import random
 import time
 from flask_cors import CORS
 
-# Initialize Flask app
 app = Flask(__name__)
+CORS(app)  # Allow requests from all origins
 
-# Set up CORS to allow requests from the frontend
-CORS(app, resources={r"/*": {"origins": ["https://crisil-one.vercel.app"]}})
-
-# Global storage for transcripts
+# We'll store the transcripts in memory for this demo
 STORE_TEXT = ""
 
-# Custom stopword list
+# A custom stopword list (per your request)
 CUSTOM_STOPWORDS = [
-    "people", "work", "life", "person", "good", "always", "year", "decision", "risk", "education", "course",
-    "school", "really", "kind", "job", "family", "child", "someone", "much", "situation", "future", "parent",
-    "help", "first", "lot", "moment", "come", "army", "thankful", "naturally", "interviewer", "informant"
+    "people","work","life","person","good","always","year","decision","risk","education","course",
+    "school","really","kind","job","family","child","someone","much","situation","future","parent",
+    "help","first","lot","moment","come","army","thankful","naturally","interviewer","informant"
 ]
 
-# Utility function to tokenize and remove stopwords
 def tokenize_and_remove_stopwords(text):
+    """Lowercase, remove punctuation, split, remove custom stopwords."""
     low = text.lower()
-    low = re.sub(r"[^\w\s]", " ", low)  # Remove punctuation
+    low = re.sub(r"[^\w\s]", " ", low)  # remove punctuation
     words = low.split()
     filtered = [w for w in words if w not in CUSTOM_STOPWORDS]
     return filtered
 
-@app.after_request
-def add_cors_headers(response):
-    """Add CORS headers to every response."""
-    response.headers["Access-Control-Allow-Origin"] = "https://crisil-one.vercel.app"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, HEAD"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    return response
+@app.route("/")
+def home():
+    """Sanity check: Just returns a message."""
+    return jsonify({"message": "Flask backend is running."})
 
-@app.route("/", methods=["GET", "POST", "OPTIONS", "HEAD"])
-def root_endpoint():
-    if request.method == "HEAD":
-        # Return a simple valid response for HEAD requests
-        return "", 200
-
-    if request.method == "OPTIONS":
-        # Handle preflight
-        response = jsonify({"message": "CORS preflight passed"})
-        response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        return response, 200
-
-    if request.method == "GET":
-        return "Flask backend is running."
-
-    if request.method == "POST":
-        # Mock response for the frontend function `hAdv`
-        elapsed_time = 0.5  # Mock elapsed time
-        results = [
-            {"model": "MockModel1", "coherence": 0.9},
-            {"model": "MockModel2", "coherence": 0.85}
-        ]
-        return jsonify({
-            "elapsed": elapsed_time,
-            "results": results,
-            "message": "Root endpoint POST request successful"
-        }), 200
-
-@app.route("/upload_text", methods=["OPTIONS", "POST"])
+@app.route("/upload_text", methods=["POST"])
 def upload_text():
-    if request.method == "OPTIONS":
-        response = jsonify({"message": "CORS preflight passed"})
-        response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        return response, 200
-
-    # Handle POST
+    """Uploads transcript text from the frontend, stores in memory."""
     global STORE_TEXT
     data = request.json
     if not data or "text" not in data:
@@ -83,51 +40,54 @@ def upload_text():
     STORE_TEXT = data["text"]
     return jsonify({"message": "Text stored"}), 200
 
-@app.route("/preprocess", methods=["GET", "OPTIONS"])
+@app.route("/preprocess", methods=["GET"])
 def preprocess():
-    if request.method == "OPTIONS":
-        response = jsonify({"message": "CORS preflight passed"})
-        response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
-        response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        return response, 200
-
+    """Preprocesses the stored text, returns word frequencies + co-occurrence graph."""
     global STORE_TEXT
     if not STORE_TEXT.strip():
         return jsonify({"error": "No transcripts found. Please upload first."}), 400
 
-    # Split text into sentences and process
+    # Naive split into sentences
     sentences = re.split(r"(?<=[.?!])\s+", STORE_TEXT)
     freq_map = {}
     cooccur = {}
 
+    # Build frequency map + co-occurrence
     for sen in sentences:
         tokens = tokenize_and_remove_stopwords(sen)
         for t in tokens:
             freq_map[t] = freq_map.get(t, 0) + 1
             if t not in cooccur:
                 cooccur[t] = {}
+        # co-occurrence
         for i in range(len(tokens)):
-            for j in range(i + 1, len(tokens)):
-                wA, wB = tokens[i], tokens[j]
+            for j in range(i+1, len(tokens)):
+                wA = tokens[i]
+                wB = tokens[j]
                 cooccur[wA][wB] = cooccur[wA].get(wB, 0) + 1
-                cooccur[wB] = cooccur.get(wB, {})
+                if wB not in cooccur:
+                    cooccur[wB] = {}
                 cooccur[wB][wA] = cooccur[wB].get(wA, 0) + 1
 
-    # Prepare frequency data
+    # Sort frequencies descending
     freq_arr = sorted(
         [{"word": k, "count": v} for k, v in freq_map.items()],
         key=lambda x: x["count"],
         reverse=True
     )
 
-    # Build graph data
+    # Build node-link structure
     nodes = [{"id": item["word"]} for item in freq_arr]
     links = []
     for wA, neighbors in cooccur.items():
         for wB, val in neighbors.items():
+            # only add link if wA < wB (avoid duplication) and frequency >= 2
             if wA < wB and val >= 2:
-                links.append({"source": wA, "target": wB, "value": val})
+                links.append({
+                    "source": wA,
+                    "target": wB,
+                    "value": val
+                })
 
     return jsonify({
         "frequency": freq_arr,
@@ -137,23 +97,16 @@ def preprocess():
         }
     })
 
-@app.route("/run_advanced_model", methods=["POST", "OPTIONS"])
+@app.route("/run_advanced_model", methods=["POST"])
 def run_advanced_model():
-    if request.method == "OPTIONS":
-        response = jsonify({"message": "CORS preflight passed"})
-        response.headers.add("Access-Control-Allow-Origin", "https://crisil-one.vercel.app")
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        return response, 200
-
+    """Mocks out a long-running advanced modeling pipeline and returns random results."""
     global STORE_TEXT
     if not STORE_TEXT.strip():
         return jsonify({"error": "No transcripts found. Please upload first."}), 400
 
-    # Start timer
     start = time.time()
 
-    # Mock advanced model outputs
+    # Fake results for demonstration
     results = [
         {
             "model": "LDA",
@@ -178,6 +131,17 @@ def run_advanced_model():
             "dbcv": None
         },
         {
+            "model": "BERT+LDA+KMeans",
+            "coherence": round(random.uniform(0.43, 0.47), 3),
+            "time_sec": random.randint(50, 80),
+            "topic_diversity": random.randint(30, 50),
+            "umass": round(random.uniform(-3.5, -3), 3),
+            "npmi": round(random.uniform(-0.3, -0.1), 3),
+            "uci": round(random.uniform(8, 10), 3),
+            "silhouette": round(random.uniform(0.4, 0.6), 3),
+            "dbcv": None
+        },
+        {
             "model": "BERT+LDA+HDBSCAN",
             "coherence": round(random.uniform(0.45, 0.48), 3),
             "time_sec": random.randint(60, 90),
@@ -188,15 +152,23 @@ def run_advanced_model():
             "silhouette": None,
             "dbcv": round(random.uniform(0.5, 0.7), 3)
         },
+        {
+            "model": "BERT+HDBSCAN",
+            "coherence": round(random.uniform(0.48, 0.50), 3),
+            "time_sec": random.randint(60, 90),
+            "topic_diversity": random.randint(40, 60),
+            "umass": None,
+            "npmi": None,
+            "uci": None,
+            "silhouette": None,
+            "dbcv": round(random.uniform(0.5, 0.8), 3)
+        },
     ]
 
-    # Select the best model
     best_model = max(results, key=lambda x: x["coherence"])
-
-    # Mock topics
     mock_topics = {
-        "Topic 0": ["work", "study", "career", "electrician"],
-        "Topic 1": ["good", "knowledge", "study", "saying"],
+        "Topic 0": ["work", "to", "study", "career", "electrician"],
+        "Topic 1": ["good", "knowledge", "to", "study", "saying"],
         "Topic 2": ["risk", "child", "education", "do", "receive"],
         "Topic 3": ["go", "job", "favorite", "business", "nobody"]
     }
@@ -212,5 +184,5 @@ def run_advanced_model():
     })
 
 if __name__ == "__main__":
-    # Start the Flask server
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # To run locally at http://127.0.0.1:5000/
+    app.run(debug=True)
