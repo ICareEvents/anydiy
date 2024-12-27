@@ -5,7 +5,7 @@ import time
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Allow requests from all origins
+CORS(app, resources={r"/*": {"origins": "*"}})  # Allow requests from all origins
 
 # We'll store the transcripts in memory for this demo
 STORE_TEXT = ""
