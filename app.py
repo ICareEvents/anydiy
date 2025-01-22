@@ -12,9 +12,10 @@ from sentence_transformers import SentenceTransformer
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+nltk.download('stopwords') 
+nltk_stop = set(stopwords.words('english'))  
 
 st = "" 
-nltk_stop = set(stopwords.words('english'))
 cs = {
     "people","work","life","person","good","always","year","decision","risk","education","course","school","really",
     "kind","job","family","child","someone","much","situation","future","parent","help","first","lot","moment","come",
@@ -36,7 +37,6 @@ def tk(x):
     w = x.split()
     w = [i for i in w if i not in all_stops]
     return w
-
 @app.route("/")
 def home():
     return jsonify({"message": "Flask backend is running."})
