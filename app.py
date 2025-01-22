@@ -1,188 +1,123 @@
 from flask import Flask, request, jsonify
-import re
-import random
-import time
 from flask_cors import CORS
+import re
+import time
+import json
+import numpy as np
+import faiss
+from together import Together
+from sentence_transformers import SentenceTransformer
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})  # Allow requests from all origins
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# We'll store the transcripts in memory for this demo
-STORE_TEXT = ""
-
-# A custom stopword list (per your request)
-CUSTOM_STOPWORDS = [
-    "people","work","life","person","good","always","year","decision","risk","education","course",
-    "school","really","kind","job","family","child","someone","much","situation","future","parent",
-    "help","first","lot","moment","come","army","thankful","naturally","interviewer","informant"
+st = ""
+cs = [
+ "people","work","life","person","good","always","year","decision","risk","education",
+ "course","school","really","kind","job","family","child","someone","much","situation",
+ "future","parent","help","first","lot","moment","come","army","thankful","naturally",
+ "interviewer","informant","maybe","time","doe","somehow","likely","ever","thought",
+ "originally","specifically","want","say","get","everything","right","general","well",
+ "yes","like","can","couldn","okay","told","thank","now","example","understand",
+ "being","think","probably","nothing","believe","question","make","know","own",
+ "for example","all","consider","most","therefore","happen","didn","don","let",
+ "got","often","way","also","went","see","take","wanted","just","one","still",
+ "mean","even","will","something","thing","be","ask","type","as far as","point",
+ "sight","allegedly","int","inf","either","whole","further"
 ]
 
-def tokenize_and_remove_stopwords(text):
-    """Lowercase, remove punctuation, split, remove custom stopwords."""
-    low = text.lower()
-    low = re.sub(r"[^\w\s]", " ", low)  # remove punctuation
-    words = low.split()
-    filtered = [w for w in words if w not in CUSTOM_STOPWORDS]
-    return filtered
+md = SentenceTransformer("all-MiniLM-L6-v2")
+ix = faiss.IndexFlatL2(384)
+
+def tk(x):
+    x = x.lower()
+    x = re.sub(r"[^\w\s]"," ",x)
+    w = x.split()
+    w = [i for i in w if i not in cs]
+    return w
 
 @app.route("/")
-def home():
-    """Sanity check: Just returns a message."""
-    return jsonify({"message": "Flask backend is running."})
+def hm():
+    return jsonify({"message":"Flask backend is running."})
 
 @app.route("/upload_text", methods=["POST"])
-def upload_text():
-    """Uploads transcript text from the frontend, stores in memory."""
-    global STORE_TEXT
-    data = request.json
-    if not data or "text" not in data:
-        return jsonify({"error": "No text field found"}), 400
-    STORE_TEXT = data["text"]
-    return jsonify({"message": "Text stored"}), 200
+def ut():
+    global st
+    d = request.json
+    if not d or "text" not in d:
+        return jsonify({"error":"No text field found"}),400
+    st = d["text"]
+    return jsonify({"message":"Text stored"}),200
 
 @app.route("/preprocess", methods=["GET"])
-def preprocess():
-    """Preprocesses the stored text, returns word frequencies + co-occurrence graph."""
-    global STORE_TEXT
-    if not STORE_TEXT.strip():
-        return jsonify({"error": "No transcripts found. Please upload first."}), 400
-
-    # Naive split into sentences
-    sentences = re.split(r"(?<=[.?!])\s+", STORE_TEXT)
-    freq_map = {}
-    cooccur = {}
-
-    # Build frequency map + co-occurrence
-    for sen in sentences:
-        tokens = tokenize_and_remove_stopwords(sen)
-        for t in tokens:
-            freq_map[t] = freq_map.get(t, 0) + 1
-            if t not in cooccur:
-                cooccur[t] = {}
-        # co-occurrence
-        for i in range(len(tokens)):
-            for j in range(i+1, len(tokens)):
-                wA = tokens[i]
-                wB = tokens[j]
-                cooccur[wA][wB] = cooccur[wA].get(wB, 0) + 1
-                if wB not in cooccur:
-                    cooccur[wB] = {}
-                cooccur[wB][wA] = cooccur[wB].get(wA, 0) + 1
-
-    # Sort frequencies descending
-    freq_arr = sorted(
-        [{"word": k, "count": v} for k, v in freq_map.items()],
-        key=lambda x: x["count"],
-        reverse=True
-    )
-
-    # Build node-link structure
-    nodes = [{"id": item["word"]} for item in freq_arr]
-    links = []
-    for wA, neighbors in cooccur.items():
-        for wB, val in neighbors.items():
-            # only add link if wA < wB (avoid duplication) and frequency >= 2
-            if wA < wB and val >= 2:
-                links.append({
-                    "source": wA,
-                    "target": wB,
-                    "value": val
-                })
-
-    return jsonify({
-        "frequency": freq_arr,
-        "graph": {
-            "nodes": nodes,
-            "links": links
-        }
-    })
+def pp():
+    global st
+    if not st.strip():
+        return jsonify({"error":"No transcripts found. Please upload first."}),400
+    sn = re.split(r"(?<=[.?!])\s+", st)
+    fm = {}
+    cc = {}
+    for s in sn:
+        t = tk(s)
+        for i in t:
+            fm[i] = fm.get(i,0)+1
+            if i not in cc:
+                cc[i] = {}
+        for i in range(len(t)):
+            for j in range(i+1,len(t)):
+                a = t[i]
+                b = t[j]
+                cc[a][b] = cc[a].get(b,0)+1
+                if b not in cc:
+                    cc[b] = {}
+                cc[b][a] = cc[b].get(a,0)+1
+    fa_ = sorted([{"word":k,"count":v} for k,v in fm.items()],key=lambda x:x["count"],reverse=True)
+    nd = [{"id":i["word"]} for i in fa_]
+    ln = []
+    for a,n in cc.items():
+        for b,v in n.items():
+            if a<b and v>=2:
+                ln.append({"source":a,"target":b,"value":v})
+    return jsonify({"frequency":fa_,"graph":{"nodes":nd,"links":ln}})
 
 @app.route("/run_advanced_model", methods=["POST"])
-def run_advanced_model():
-    """Mocks out a long-running advanced modeling pipeline and returns random results."""
-    global STORE_TEXT
-    if not STORE_TEXT.strip():
-        return jsonify({"error": "No transcripts found. Please upload first."}), 400
-
-    start = time.time()
-
-    # Fake results for demonstration
-    results = [
-        {
-            "model": "LDA",
-            "coherence": round(random.uniform(0.38, 0.42), 3),
-            "time_sec": random.randint(15, 25),
-            "topic_diversity": random.randint(15, 30),
-            "umass": round(random.uniform(-2, -1), 3),
-            "npmi": round(random.uniform(-0.3, -0.1), 3),
-            "uci": round(random.uniform(8, 9), 3),
-            "silhouette": round(random.uniform(0.2, 0.35), 3),
-            "dbcv": None
-        },
-        {
-            "model": "BERT+Kmeans",
-            "coherence": round(random.uniform(0.40, 0.45), 3),
-            "time_sec": random.randint(35, 60),
-            "topic_diversity": random.randint(25, 40),
-            "umass": round(random.uniform(-3.2, -2.5), 3),
-            "npmi": round(random.uniform(-0.2, -0.1), 3),
-            "uci": round(random.uniform(8, 10), 3),
-            "silhouette": round(random.uniform(0.4, 0.55), 3),
-            "dbcv": None
-        },
-        {
-            "model": "BERT+LDA+KMeans",
-            "coherence": round(random.uniform(0.43, 0.47), 3),
-            "time_sec": random.randint(50, 80),
-            "topic_diversity": random.randint(30, 50),
-            "umass": round(random.uniform(-3.5, -3), 3),
-            "npmi": round(random.uniform(-0.3, -0.1), 3),
-            "uci": round(random.uniform(8, 10), 3),
-            "silhouette": round(random.uniform(0.4, 0.6), 3),
-            "dbcv": None
-        },
-        {
-            "model": "BERT+LDA+HDBSCAN",
-            "coherence": round(random.uniform(0.45, 0.48), 3),
-            "time_sec": random.randint(60, 90),
-            "topic_diversity": random.randint(35, 55),
-            "umass": round(random.uniform(-3.6, -3.1), 3),
-            "npmi": round(random.uniform(-0.3, -0.1), 3),
-            "uci": round(random.uniform(8, 10), 3),
-            "silhouette": None,
-            "dbcv": round(random.uniform(0.5, 0.7), 3)
-        },
-        {
-            "model": "BERT+HDBSCAN",
-            "coherence": round(random.uniform(0.48, 0.50), 3),
-            "time_sec": random.randint(60, 90),
-            "topic_diversity": random.randint(40, 60),
-            "umass": None,
-            "npmi": None,
-            "uci": None,
-            "silhouette": None,
-            "dbcv": round(random.uniform(0.5, 0.8), 3)
-        },
+def ram():
+    global st
+    if not st.strip():
+        return jsonify({"error":"No transcripts found. Please upload first."}),400
+    ix.reset()
+    em = md.encode([st])
+    em = np.array(em).astype("float32")
+    ix.add(em)
+    ds,ig = ix.search(em,1)
+    tc = Together()
+    cp = ""
+    p = [
+      {
+       "role":"system",
+       "content":"You are a helpful assistant. Analyze the text below. Extract topics, entities, sentiments, themes, directions, outlook in a structured JSON format, then write a short summary incorporating these. Text: "+st
+      }
     ]
+    r = tc.chat.completions.create(
+        model="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo-128K",
+        messages=p,
+        max_tokens=None,
+        temperature=0.7,
+        top_p=0.7,
+        top_k=50,
+        repetition_penalty=1,
+        stop=["<|eot_id|>","<|eom_id|>"],
+        stream=True
+    )
+    for t in r:
+        if hasattr(t,"choices"):
+            cp += t.choices[0].delta.content
+    try:
+        an = json.loads(cp)
+    except:
+        an = {"raw_response":cp}
+    e = round(time.time(),2)
+    return jsonify({"elapsed":e,"analysis":an})
 
-    best_model = max(results, key=lambda x: x["coherence"])
-    mock_topics = {
-        "Topic 0": ["work", "to", "study", "career", "electrician"],
-        "Topic 1": ["good", "knowledge", "to", "study", "saying"],
-        "Topic 2": ["risk", "child", "education", "do", "receive"],
-        "Topic 3": ["go", "job", "favorite", "business", "nobody"]
-    }
-
-    elapsed = round(time.time() - start, 2)
-    return jsonify({
-        "elapsed": elapsed,
-        "results": {
-            "models": results,
-            "best_model": best_model,
-            "topics": mock_topics
-        }
-    })
-
-if __name__ == "__main__":
-    # To run locally at http://127.0.0.1:5000/
+if __name__=="__main__":
     app.run(debug=True)
