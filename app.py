@@ -6,7 +6,6 @@ import json
 import numpy as np
 import faiss
 import nltk
-nltk.download('stopwords')
 from nltk.corpus import stopwords
 from together import Together
 from sentence_transformers import SentenceTransformer
@@ -14,9 +13,8 @@ from sentence_transformers import SentenceTransformer
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-st = ""
+st = "" 
 nltk_stop = set(stopwords.words('english'))
-
 cs = {
     "people","work","life","person","good","always","year","decision","risk","education","course","school","really",
     "kind","job","family","child","someone","much","situation","future","parent","help","first","lot","moment","come",
@@ -28,14 +26,11 @@ cs = {
     "as far as","point","sight","allegedly","int","inf","either","whole","further"
 }
 all_stops = nltk_stop.union(cs)
+
 md = SentenceTransformer("all-MiniLM-L6-v2")
 ix = faiss.IndexFlatL2(384)
 
 def tk(x):
-    """
-    Tokenizer to lowercase, remove punctuation, split, and remove both
-    NLTK + custom stopwords.
-    """
     x = x.lower()
     x = re.sub(r"[^\w\s]", " ", x)
     w = x.split()
@@ -43,12 +38,11 @@ def tk(x):
     return w
 
 @app.route("/")
-def hm():
-    return jsonify({"message": "Flask backend is running with NLTK stopwords."})
+def home():
+    return jsonify({"message": "Flask backend is running."})
 
 @app.route("/upload_text", methods=["POST"])
-def ut():
-    """Store the uploaded text in a global variable."""
+def upload_text():
     global st
     d = request.json
     if not d or "text" not in d:
@@ -57,70 +51,57 @@ def ut():
     return jsonify({"message": "Text stored"}), 200
 
 @app.route("/preprocess", methods=["GET"])
-def pp():
-    """
-    Preprocess the stored text, get word frequencies + co-occurrence graph.
-    """
+def preprocess():
     global st
     if not st.strip():
         return jsonify({"error": "No transcripts found. Please upload first."}), 400
 
-    sn = re.split(r"(?<=[.?!])\s+", st)
-    fm = {}
-    cc = {}
-    for s_ in sn:
-        t_ = tk(s_)
-        for i_ in t_:
-            fm[i_] = fm.get(i_, 0) + 1
-            if i_ not in cc:
-                cc[i_] = {}
-        for i in range(len(t_)):
-            for j in range(i+1, len(t_)):
-                a = t_[i]
-                b = t_[j]
-                cc[a][b] = cc[a].get(b, 0) + 1
-                if b not in cc:
-                    cc[b] = {}
-                cc[b][a] = cc[b].get(a, 0) + 1
+    sentences = re.split(r"(?<=[.?!])\s+", st)
+    freq_map = {}
+    co_occur = {}
+    for s_ in sentences:
+        tokens = tk(s_)
+        for tok in tokens:
+            freq_map[tok] = freq_map.get(tok, 0) + 1
+            if tok not in co_occur:
+                co_occur[tok] = {}
+        for i in range(len(tokens)):
+            for j in range(i + 1, len(tokens)):
+                a, b = tokens[i], tokens[j]
+                co_occur[a][b] = co_occur[a].get(b, 0) + 1
+                if b not in co_occur:
+                    co_occur[b] = {}
+                co_occur[b][a] = co_occur[b].get(a, 0) + 1
 
-    fa_ = sorted(
-        [{"word": k, "count": v} for k, v in fm.items()],
+    freq_arr = sorted(
+        [{"word": k, "count": v} for k, v in freq_map.items()],
         key=lambda x: x["count"],
         reverse=True
     )
-    nd = [{"id": i["word"]} for i in fa_]
-    ln = []
-    for a, n in cc.items():
-        for b, v in n.items():
-            if a < b and v >= 2:
-                ln.append({"source": a, "target": b, "value": v})
+    nodes = [{"id": item["word"]} for item in freq_arr]
+    links = []
+    for a, nbrs in co_occur.items():
+        for b, val in nbrs.items():
+            if a < b and val >= 2:
+                links.append({"source": a, "target": b, "value": val})
 
     return jsonify({
-        "frequency": fa_,
-        "graph": {"nodes": nd, "links": ln}
+        "frequency": freq_arr,
+        "graph": {"nodes": nodes, "links": links}
     })
 
 @app.route("/run_advanced_model", methods=["POST"])
-def ram():
-    """
-    1) Encode st
-    2) LLM extracts topics, entities, sentiments, etc. in structured JSON
-    3) Summarizes the text
-    4) Potentially returns generated code in the JSON
-    5) Save results in 'analysis_output.json'
-    6) If 'generated_code' is present, also save 'generated_code.py'
-    7) Return JSON with analysis + time
-    """
+def run_advanced_model():
     global st
     if not st.strip():
         return jsonify({"error": "No transcripts found. Please upload first."}), 400
+
     ix.reset()
     emb = md.encode([st])
     emb = np.array(emb).astype("float32")
     ix.add(emb)
     tc = Together(api_key="6a98a50ecc91a4b4ced67b24f1376e1ba96a35b18a017d9f45b42049be0ad611")
 
-    cp = ""
     p = [
         {
             "role": "system",
@@ -128,13 +109,13 @@ def ram():
                 "You are a helpful assistant. Analyze the text below. "
                 "Extract topics, entities, sentiments, themes, directions, outlook in a structured JSON format, "
                 "then write a short summary incorporating these. Also generate any needed Python code if relevant, "
-                "in a key named 'generated_code'. The text is: \n\n" + st
+                "under a key named 'generated_code'. The text is:\n\n" + st
             )
         }
     ]
 
-    start_time = time.time()
-
+    t0 = time.time()
+    response_text = ""
     r_ = tc.chat.completions.create(
         model="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo-128K",
         messages=p,
@@ -146,37 +127,29 @@ def ram():
         stop=["<|eot_id|>", "<|eom_id|>"],
         stream=True
     )
-    for tok in r_:
-        if hasattr(tok, "choices"):
-            cp += tok.choices[0].delta.content
+    for chunk in r_:
+        if hasattr(chunk, "choices"):
+            response_text += chunk.choices[0].delta.content
 
-    elapsed_time = round(time.time() - start_time, 2)
-
+    elapsed = round(time.time() - t0, 2)
     try:
-        an = json.loads(cp)
+        analysis = json.loads(response_text)
     except:
-        an = {"raw_response": cp}
+        analysis = {"raw_response": response_text}
     with open("analysis_output.json", "w", encoding="utf-8") as f:
-        json.dump(an, f, indent=2, ensure_ascii=False)
-    if isinstance(an, dict) and "generated_code" in an:
-        code_content = an["generated_code"]
+        json.dump(analysis, f, indent=2)
+    if isinstance(analysis, dict) and "generated_code" in analysis:
         with open("generated_code.py", "w", encoding="utf-8") as cf:
-            cf.write(code_content)
+            cf.write(analysis["generated_code"])
 
-    return jsonify({"elapsed": elapsed_time, "analysis": an})
+    return jsonify({"elapsed": elapsed, "analysis": analysis})
 
 @app.route("/download_analysis", methods=["GET"])
 def download_analysis():
-    """
-    If you want to let the user download the 'analysis_output.json' directly.
-    """
     return send_file("analysis_output.json", as_attachment=True)
 
 @app.route("/download_code", methods=["GET"])
 def download_code():
-    """
-    If you want to let the user download 'generated_code.py' if it exists.
-    """
     return send_file("generated_code.py", as_attachment=True)
 
 if __name__ == "__main__":
