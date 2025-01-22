@@ -4,3 +4,6 @@ hdbscan
 umap-learn
 sentence-transformers
 gunicorn
+regex 
+faiss-cpu  
+together
